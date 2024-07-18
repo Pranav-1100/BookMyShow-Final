@@ -1,22 +1,20 @@
-const express = require("express"); // Add this line
+const express = require("express");
 const router = express.Router();
-const stripe = require("stripe")(
-  "sk_test_51JKPQWSJULHQ0FL7LbqLKOaIcjurlUcdP2hJQkXZw3txlhh0hFrEEEOTwdVxf6sWKqLIrerKpV5EfGvmvntYu7Mt00vJq4YQKL"
-);
+const stripe = require("stripe")("sk_test_51JKPQWSJULHQ0FL7LbqLKOaIcjurlUcdP2hJQkXZw3txlhh0hFrEEEOTwdVxf6sWKqLIrerKpV5EfGvmvntYu7Mt00vJq4YQKL");
 const authMiddleware = require("../middlewares/authMiddleware");
 const Booking = require("../models/bookingModel");
 const Show = require("../models/showModel");
-const EmailHelper = require("../utils/emailSender");
+const { emailSender } = require('../utils/emailSender');
 
 const endpointSecret = "whsec_774b9109545b45e18af845534afa4e7e0d144a1a57db46482ca7886c10cd5a5a";
 
- // Webhook endpoint 
+// Webhook endpoint
 router.post('/webhook', express.raw({ type: 'application/json' }), (request, response) => {
-  console.log('Webhook Called')
+  console.log('Webhook Called');
   const sig = request.headers['stripe-signature'];
   let event;
 
-try {
+  try {
     event = stripe.webhooks.constructEvent(request.body, sig, endpointSecret);
   } catch (err) {
     response.status(400).send(`Webhook Error: ${err.message}`);
@@ -34,17 +32,13 @@ try {
       console.log(`Unhandled event type ${event.type}`);
   }
 
-
-
-
-
   response.send();
 });
 
 // Function to handle payment_intent.succeeded event
 async function handlePaymentIntentSucceeded(paymentIntent) {
-  console.log('Succesfull')
-  console.log(paymentIntent)
+  console.log('Successful');
+  console.log(paymentIntent);
 }
 
 router.post("/make-payment", async (req, res) => {
@@ -57,13 +51,12 @@ router.post("/make-payment", async (req, res) => {
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amount,
-      currency: "usd",
+      currency: "inr",
       customer: customer.id,
       payment_method_types: ["card"],
       receipt_email: token.email,
       description: "Token has been assigned to the movie!",
     });
-
 
     const transactionId = paymentIntent.id;
 
@@ -73,14 +66,13 @@ router.post("/make-payment", async (req, res) => {
       data: transactionId,
     });
   } catch (err) {
-    res.send({
+    res.status(500).send({
       success: false,
       message: err.message,
     });
   }
 });
 
-// Create a booking after the payment
 router.post("/book-show", async (req, res) => {
   try {
     const newBooking = new Booking(req.body);
@@ -92,26 +84,25 @@ router.post("/book-show", async (req, res) => {
       bookedSeats: updatedBookedSeats,
     });
 
-    const populatedBooking = await Booking.findById(newBooking._id).populate("user")
-    .populate("show")
-    .populate({
-      path: "show",
-      populate: {
-        path: "movie",
-        model: "movies",
-      },
-    })
-    .populate({
-      path: "show",
-      populate: {
-        path: "theatre",
-        model: "theatres",
-      },
-    });
-
+    const populatedBooking = await Booking.findById(newBooking._id)
+      .populate("user")
+      .populate("show")
+      .populate({
+        path: "show",
+        populate: {
+          path: "movie",
+          model: "movies",
+        },
+      })
+      .populate({
+        path: "show",
+        populate: {
+          path: "theatre",
+          model: "theatres",
+        },
+      });
 
     console.log("this is populated Booking", populatedBooking);
-    // console.log(populatedBooking.user.email);
 
     res.send({
       success: true,
@@ -119,24 +110,25 @@ router.post("/book-show", async (req, res) => {
       data: populatedBooking,
     });
 
-    await EmailHelper("ticketTemplate.html", populatedBooking.user.email, {
-       name: populatedBooking.user.name,
-       movie : populatedBooking.show.movie.title,
-       theatre : populatedBooking.show.theatre.name,
-       date:populatedBooking.show.date,
-       time:populatedBooking.show.time,
-       seats : populatedBooking.seats,
-       amount : populatedBooking.seats.length * populatedBooking.show.ticketPrice,
-       transactionId : populatedBooking.transactionId,
-       
-       
-
-    });
+    // Send email after response to avoid double sending issue
+    await emailSender("ticketTemplate.html", populatedBooking.user.email, {
+      name: populatedBooking.user.name,
+      movie: populatedBooking.show.movie.title,
+      theatre: populatedBooking.show.theatre.name,
+      date: populatedBooking.show.date,
+      time: populatedBooking.show.time,
+      seats: populatedBooking.seats,
+      amount: populatedBooking.seats.length * populatedBooking.show.ticketPrice,
+      transactionId: populatedBooking.transactionId,
+    }, 'Your Movie Ticket Booking Confirmation');
   } catch (err) {
-    res.send({
-      success: false,
-      message: err.message,
-    });
+    console.error("Error in booking:", err);
+    if (!res.headersSent) {
+      res.status(500).send({
+        success: false,
+        message: err.message,
+      });
+    }
   }
 });
 
@@ -166,7 +158,7 @@ router.get("/get-all-bookings", authMiddleware, async (req, res) => {
       data: bookings,
     });
   } catch (err) {
-    res.send({
+    res.status(500).send({
       success: false,
       message: err.message,
     });

@@ -1,49 +1,65 @@
 const nodemailer = require('nodemailer');
-const fs = require("fs");
-const dotenv = require("dotenv");
-const path = require("path");
+const fs = require('fs');
+const dotenv = require('dotenv');
+const path = require('path');
 dotenv.config();
 
+const { AUTH_EMAIL, AUTH_PASSWORD } = process.env;
 
 function replaceContent(content, creds) {
-    let allkeysArr = Object.keys(creds);
-    allkeysArr.forEach(function (key) {
+    let allKeysArr = Object.keys(creds);
+    allKeysArr.forEach(function (key) {
         content = content.replace(`#{${key}}`, creds[key]);
-    })
-
+    });
     return content;
 }
-async function EmailHelper(templateName, reciverEmail, creds) {
-    // console.log(templateName, reciverEmail, creds)
+
+async function emailSender(templateName, receiverEmail, creds, subject) {
+    console.log(templateName, receiverEmail, creds);
     try {
-        const userMail = process.env.EMAIL_USER;
-        const userPass = process.env.EMAIL_PASS;
-        const templatePath = path.join(__dirname, "email_templates", templateName);
-        let content = await fs.promises.readFile(templatePath, "utf-8");
+        const templatePath = path.join(__dirname, 'email_templates', templateName);
+        let content = await fs.promises.readFile(templatePath, 'utf-8');
         const emailDetails = {
-            to: reciverEmail,
-            from: process.env.EMAIL_USER, 
-            subject: 'RESET OTP',
-            text: `Hi ${creds.name} this your reset otp ${creds.otp}`,
+            to: receiverEmail,
+            from: AUTH_EMAIL,
+            subject: subject,
+            text: `Hi ${creds.name}, this is your reset OTP: ${creds.otp}`,
             html: replaceContent(content, creds),
-        }
-        const transportDetails = {
+        };
+        const transporter = nodemailer.createTransport({
             service: 'gmail',
-            secure: true,
-            port: 465,
             auth: {
-                user: userMail,
-                pass: userPass
-            }
-        }
-
-        const transporter = nodemailer.createTransport(transportDetails);
-        await transporter.sendMail((emailDetails))
-        console.log("email sent")
+                user: AUTH_EMAIL,
+                pass: AUTH_PASSWORD,
+            },
+        });
+        await transporter.sendMail(emailDetails);
+        console.log('Email sent');
     } catch (err) {
-        console.log(err)
+        console.log('Error sending email:', err);
     }
-
 }
 
-module.exports = EmailHelper;
+async function sendMail(userEmail, subject, text) {
+    const transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+            user: AUTH_EMAIL,
+            pass: AUTH_PASSWORD,
+        },
+    });
+    const mailOptions = {
+        from: AUTH_EMAIL,
+        to: userEmail,
+        subject: subject,
+        text: text,
+    };
+    try {
+        await transporter.sendMail(mailOptions);
+        console.log('Email sent');
+    } catch (error) {
+        console.log('Error sending email:', error);
+    }
+}
+
+module.exports = { emailSender, sendMail };
