@@ -46,6 +46,12 @@ router.get('/get-all-movies' , async(req , res)=>{
 router.put('/update-movie', async (req, res) => {
     try{
         const movie = await Movie.findByIdAndUpdate(req.body.movieId, req.body);
+        if(!movie){
+            return res.status(404).send({
+                success: false,
+                message: 'Movie not found'
+            });
+        }
         res.send({
             success: true,
             message: 'The movie has been updated!',
